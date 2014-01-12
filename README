@@ -15,7 +15,7 @@ r-base-dev
 
 If compiling R from source, use the --enable-R-shlib flag.
 
-One installed, add the following packages:
+Once installed, add the following packages:
 
 > install.packages("corpcor")
 > install.packages("igraph")
