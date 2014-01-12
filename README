@@ -39,7 +39,7 @@ Details and license:
 
 http://cran.r-project.org/web/packages/JGL/index.html
 
-Then compile the main program with 'make'. This should link to R/Rcpp/RInside shared libraries.
+Then compile the main program with 'make'. This should link to R/Rcpp/RInside shared libraries and find the necessary headers.
 
 Then run with:
 
