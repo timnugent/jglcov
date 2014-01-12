@@ -2,3 +2,62 @@ jglcov
 ======
 
 Inverse covariance estimation using the joint graphical lasso [bioinformatics]
+
+(c) Tim Nugent 2014
+
+Installation
+============
+
+Requires R version 3. On Ubuntu, install:
+
+r-base
+r-base-dev
+
+If compiling R from source, use the --enable-R-shlib flag.
+
+One installed, add the following packages:
+
+> install.packages("corpcor")
+> install.packages("igraph")
+> install.packages("Rcpp")
+> install.packages("RInside")
+
+Details:
+
+http://cran.r-project.org/web/packages/corpcor/index.html
+http://cran.r-project.org/web/packages/igraph/index.html
+http://cran.r-project.org/web/packages/Rcpp/index.html
+http://cran.r-project.org/web/packages/RInside/index.html
+
+Next tar/gzip up the JGLx directory which contains a modified version of the JGL package, then install:
+
+> install.packages("JGLx.tar.gz", repos = NULL, type="source")
+
+The modification allows you to pass a pXp covariance matrix rather than an nXp data matrix. 
+
+Details and license:
+
+http://cran.r-project.org/web/packages/JGL/index.html
+
+Then compile the main program with 'make'. This should link to R/Rcpp/RInside shared libraries.
+
+Then run with:
+
+jglcov demo.aln
+
+See source code for command line options.
+
+Warning - experimental code still under development!
+
+
+
+
+
+
+
+
+
+
+
+
+
