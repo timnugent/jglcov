@@ -1,0 +1,5 @@
+export(JGLx,plot.jgl,print.jgl,screen.fgl,screen.ggl,subnetworks,net.neighbors,net.hubs,net.edges,net.degree)
+import(igraph)
+
+
+
