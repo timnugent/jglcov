@@ -8,10 +8,14 @@ Inverse covariance estimation using the joint graphical lasso [bioinformatics]
 Installation
 ============
 
-Requires R version 3. On Ubuntu, install:
+Requires R >= version 3. On Ubuntu, install:
 
 r-base
 r-base-dev
+
+From the CRAN ppa:
+
+http://cran.r-project.org/bin/linux/ubuntu/README
 
 If compiling R from source, use the --enable-R-shlib flag.
 
