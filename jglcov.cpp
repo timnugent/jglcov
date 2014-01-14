@@ -671,8 +671,8 @@ int main(int argc, char **argv){
 	    if(tp5) p5 = (double)tp5/5.0;
 	    if(tp2) p2 = (double)tp2/2.0;
 	    if(tp1) p1 = (double)tp1/1.0;
-    	cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-		cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
+    	    cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
+	    cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
     }	
 
 	*/
@@ -710,7 +710,7 @@ int main(int argc, char **argv){
     	for (j = i+1; j< dim; j++){
             //cout << y(i,j) << " ";
             if(i != j && y(i,j) != 0){
-				sclist[ncon].sc += fabs(y(i,j));
+		    sclist[ncon].sc += fabs(y(i,j));
 	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
 	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
            }
@@ -718,8 +718,9 @@ int main(int argc, char **argv){
         //cout << endl;    
     }
 
-	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
+    qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
     for (i = 0; i < ncon; i++){
+    	printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
     	if(native_contacts.size()){
 			string con = to_string((long long int)sclist[i].i);
 			con.append("-");
@@ -741,13 +742,13 @@ int main(int argc, char **argv){
 
     if(native_contacts.size()){
 
-		double p100 = 0.0;	
-		double p50 = 0.0;
-		double p20 = 0.0;
-		double p10 = 0.0;
-		double p5 = 0.0;
-		double p2 = 0.0;
-		double p1 = 0.0;
+	    double p100 = 0.0;	
+	    double p50 = 0.0;
+	    double p20 = 0.0;
+	    double p10 = 0.0;
+	    double p5 = 0.0;
+	    double p2 = 0.0;
+	    double p1 = 0.0;
 
 	    if(tp100) p100 = (double)tp100/100.0;
 	    if(tp50) p50 = (double)tp50/50.0;
@@ -757,8 +758,8 @@ int main(int argc, char **argv){
 	    if(tp2) p2 = (double)tp2/2.0;
 	    if(tp1) p1 = (double)tp1/1.0;
 	    cout << "# ncon = " << ncon << endl;
-    	cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-		cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
+    	    cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
+	    cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
     }	
 
     // Clean up
