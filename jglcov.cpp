@@ -206,8 +206,8 @@ int index4D(int i, int j, int a, int b, int w, int ww){
 
 int main(int argc, char **argv){
 
-	double wtsum, pcmean, pc, idthresh = -1.0, pseudoc = 1.0, sumfnzero = 0.0;
-	unsigned int nseqs, ncon = 0, opt, seqlen, i, j, k, a, b, npair, nnzero, shrinkflg = 1, minseqsep = 5, apcflg = 0, wts = 1, alphabet = 1, alphabet_sz = 21;
+	double wtsum, pcmean, pc, idthresh = -1.0, pseudoc = 1.0, sumfnzero = 0.0, percentile = 0.05;
+	unsigned int nseqs, ncon = 0, opt, seqlen, i, j, k, a, b, npair, nnzero, filt = 0, shrinkflg = 1, minseqsep = 5, apcflg = 0, wts = 1, alphabet = 1, alphabet_sz = 21;
 	int o = 1;
 	double rho = 1e-06;
 	double l1  = 1e-08;
@@ -217,17 +217,67 @@ int main(int argc, char **argv){
 	string jgl_weight = "\"equal\"";
 	string penalty = "group";
 
+    // Bayesian priors
+    double priors_a0[20][20] = {
+        {0.0384709,0.0315522,0.0252431,0.0267246,0.0553167,0.0280882,0.0234792,0.0309125,0.0348211,0.0575771,0.0544788,0.0252531,0.0506351,0.0580766,0.0278139,0.0277613,0.03306,0.0535248,0.0569143,0.0548293},
+        {0.0315522,0.0377166,0.0395014,0.0448287,0.0462737,0.0351509,0.0437371,0.0327015,0.0489691,0.0430665,0.0381715,0.0291482,0.0372603,0.0521655,0.0323253,0.0352403,0.0354181,0.0633929,0.0600957,0.0396119},
+        {0.0252431,0.0395014,0.030496,0.0298982,0.0365854,0.0313936,0.025177,0.0273452,0.0345646,0.0338721,0.0308303,0.0264725,0.0329986,0.0432402,0.0295818,0.0336339,0.0309915,0.0546282,0.0525324,0.0364171},
+        {0.0267246,0.0448287,0.0298982,0.0256499,0.0350737,0.0242983,0.0168017,0.0255038,0.0466577,0.0332681,0.0283254,0.0325473,0.0298229,0.039159,0.0274418,0.0288016,0.0298283,0.040271,0.0447852,0.0313199},
+        {0.0553167,0.0462737,0.0365854,0.0350737,0.191235,0.0479339,0.0242558,0.0432369,0.0639594,0.0714286,0.0772233,0.0302804,0.0968137,0.115055,0.0458971,0.0424671,0.0475578,0.0919689,0.0986005,0.0721717},
+        {0.0280882,0.0351509,0.0313936,0.0242983,0.0479339,0.0308642,0.0225366,0.0282611,0.040107,0.0384517,0.0365945,0.0274413,0.0398421,0.0444999,0.0320218,0.028232,0.0327219,0.0632699,0.0503027,0.0380285},
+        {0.0234792,0.0437371,0.025177,0.0168017,0.0242558,0.0225366,0.0168077,0.0196585,0.0346681,0.0308996,0.0284074,0.0358452,0.0265916,0.0360999,0.0236483,0.0263646,0.0267739,0.045389,0.0471886,0.0305756},
+        {0.0309125,0.0327015,0.0273452,0.0255038,0.0432369,0.0282611,0.0196585,0.0309288,0.0381158,0.0348741,0.0326037,0.0259678,0.0399194,0.0455832,0.0300998,0.0280512,0.0309509,0.047529,0.0472133,0.0343498},
+        {0.0348211,0.0489691,0.0345646,0.0466577,0.0639594,0.040107,0.0346681,0.0381158,0.0644567,0.0473282,0.0461363,0.0257868,0.0596919,0.0649699,0.042328,0.0426136,0.0498899,0.0743728,0.0664414,0.0452912},
+        {0.0575771,0.0430665,0.0338721,0.0332681,0.0714286,0.0384517,0.0308996,0.0348741,0.0473282,0.101794,0.0999256,0.0326071,0.0779581,0.102943,0.0371438,0.0361649,0.0495798,0.0930421,0.0847148,0.097934},
+        {0.0544788,0.0381715,0.0308303,0.0283254,0.0772233,0.0365945,0.0284074,0.0326037,0.0461363,0.0999256,0.095633,0.0297359,0.0796293,0.107474,0.0334634,0.0350263,0.0482116,0.0995159,0.078081,0.0861285},
+        {0.0252531,0.0291482,0.0264725,0.0325473,0.0302804,0.0274413,0.0358452,0.0259678,0.0257868,0.0326071,0.0297359,0.0247232,0.0294663,0.0382533,0.0258621,0.0268877,0.0273437,0.0463936,0.0499595,0.0349487},
+        {0.0506351,0.0372603,0.0329986,0.0298229,0.0968137,0.0398421,0.0265916,0.0399194,0.0596919,0.0779581,0.0796293,0.0294663,0.0797342,0.098869,0.0350605,0.0379338,0.0435572,0.0910165,0.0748803,0.0736103},
+        {0.0580766,0.0521655,0.0432402,0.039159,0.115055,0.0444999,0.0360999,0.0455832,0.0649699,0.102943,0.107474,0.0382533,0.098869,0.143694,0.0463234,0.0462518,0.0550044,0.114045,0.0935484,0.101713},
+        {0.0278139,0.0323253,0.0295818,0.0274418,0.0458971,0.0320218,0.0236483,0.0300998,0.042328,0.0371438,0.0334634,0.0258621,0.0350605,0.0463234,0.037079,0.0246798,0.034871,0.0523203,0.0572042,0.0346482},
+        {0.0277613,0.0352403,0.0336339,0.0288016,0.0424671,0.028232,0.0263646,0.0280512,0.0426136,0.0361649,0.0350263,0.0268877,0.0379338,0.0462518,0.0246798,0.0257632,0.0323108,0.0415786,0.045959,0.0389282},
+        {0.03306,0.0354181,0.0309915,0.0298283,0.0475578,0.0327219,0.0267739,0.0309509,0.0498899,0.0495798,0.0482116,0.0273437,0.0435572,0.0550044,0.034871,0.0323108,0.0408865,0.0578888,0.0545251,0.0485699},
+        {0.0535248,0.0633929,0.0546282,0.040271,0.0919689,0.0632699,0.045389,0.047529,0.0743728,0.0930421,0.0995159,0.0463936,0.0910165,0.114045,0.0523203,0.0415786,0.0578888,0.107769,0.0944882,0.0823899},
+        {0.0569143,0.0600957,0.0525324,0.0447852,0.0986005,0.0503027,0.0471886,0.0472133,0.0664414,0.0847148,0.078081,0.0499595,0.0748803,0.0935484,0.0572042,0.045959,0.0545251,0.0944882,0.0743175,0.0763453},
+        {0.0548293,0.0396119,0.0364171,0.0313199,0.0721717,0.0380285,0.0305756,0.0343498,0.0452912,0.097934,0.0861285,0.0349487,0.0736103,0.101713,0.0346482,0.0389282,0.0485699,0.0823899,0.0763453,0.0915821}
+    };
+
+    double priors_a1[5][5] = {
+        {0.0329891,0.0493345,0.0273959,0.0467397,0.0364271},
+        {0.0493345,0.191235,0.038926,0.0838025,0.0639594},
+        {0.0273959,0.038926,0.029892,0.0387009,0.0402696},
+        {0.0467397,0.0838025,0.0387009,0.0927607,0.0525634},
+        {0.0364271,0.0639594,0.0402696,0.0525634,0.0644567}
+    };
+
+    double priors_a2[5][5] = {
+        {0.0309809,0.0432743,0.0297187,0.0284433,0.0290587},
+        {0.0432743,0.0923695,0.0352178,0.0377782,0.0395318},
+        {0.0297187,0.0352178,0.0285302,0.0262594,0.0282917},
+        {0.0284433,0.0377782,0.0262594,0.0309288,0.0300998},
+        {0.0290587,0.0395318,0.0282917,0.0300998,0.037079}
+    };
+
+    double priors_a3[5][5] = {
+        {0.0380645,0.0532596,0.0282864,0.032105,0.0304052},
+        {0.0532596,0.0923695,0.0328692,0.0384289,0.0391278},
+        {0.0282864,0.0328692,0.0186447,0.0234738,0.0322004},
+        {0.032105,0.0384289,0.0234738,0.0313865,0.0284151},
+        {0.0304052,0.0391278,0.0322004,0.0284151,0.0303451}
+    };
+
 	while(o < argc){
         if(argv[o][0] == '-'){
             o++;
             switch(argv[o-1][1]){
-            		case 'p' : {penalty = "fused"; o--; cout << "#Using fused penalty" << endl; break;}
-            		case 'c' : {native = argv[o]; break;}
-            		case 'r' : {rho = atof(argv[o]); break;}
-                    case 'm' : {l1 = atof(argv[o]); break;}
-                    case 'n' : {l2 = atof(argv[o]); break;}
-                    case 'a' : {alphabet = atoi(argv[o]); cout << "#Using alphabet " << alphabet << endl; break;}
-                    case 'w' : {wts = 1; o--; cout << "#Using weights" << endl; break;}
+            		case 'p' : {penalty = "fused"; o--; cout << "#Using fused penalty" << endl; break;} // use fused rather than group penalty (slow/might crash)
+            		case 'c' : {native = argv[o]; break;} // file containing native contacts
+            		case 'r' : {rho = atof(argv[o]); break;} // jgl rho param
+                    case 'm' : {l1 = atof(argv[o]); break;} // jgl lambda1 param
+                    case 'n' : {l2 = atof(argv[o]); break;} // jgl lambda2 param
+                    case 'a' : {alphabet = atoi(argv[o]); cout << "#Using alphabet " << alphabet << endl; break;} // use reduced alphabet (1-3)
+                    case 'w' : {wts = atoi(argv[o]); cout << "#Using weights " << wts << endl; break;} // use weights, 1 = condition, 2 = bayesian priors
+                    case 'f' : {filt = atoi(argv[o]); break;} // filter low weights at whatever percentile
+                    case 'g' : {percentile = atof(argv[o]); break;} // filter matrices with weights in this percentile
                     default  : {fail("Options:\t-m float lamda1 penalty\n-n float lambda2 penalty\n-w use weights\n-c file native contacts\n");}
                 }   
            }
@@ -237,6 +287,7 @@ int main(int argc, char **argv){
     if(alphabet) alphabet_sz = 6;
     unsigned int classes = (alphabet_sz-1)*(alphabet_sz-1);
 
+    cout << "#rho     = " << rho<< endl;
     cout << "#lambda1 = " << l1 << endl;
     cout << "#lambda2 = " << l2 << endl;
     cout << "#aln     = " << argv[o-1] << endl;
@@ -413,6 +464,7 @@ int main(int argc, char **argv){
 	Rcpp::List dimnms = Rcpp::List::create(labels,labels);
 	Rcpp::List mylist(classes);
 	Rcpp::NumericVector weights(classes);
+    Rcpp::NumericVector prior_weights(classes);
 	double max_cond = -100000.0;
 
     for (a = k = 0; a < alphabet_sz-1; a++){
@@ -466,29 +518,23 @@ int main(int argc, char **argv){
 		    	mylist[k] = M;
 	    	}
 
-			/*
-			cout << "Matrix " << k+1 << ":" << endl;
-    		for (i = 0; i < seqlen; i++){
-        		for (j = 0; j < seqlen; j++){
-                    if (i != j){
-                    	cout << M(i,j) << " ";
-	                }        
-    			}
-    			cout << endl;
-    		}
-			*/
+            if(!alphabet){
+                prior_weights[k++] = 10*priors_a0[a][b];
+            }else if(alphabet == 1){    
+                prior_weights[k++] = 10*priors_a1[a][b];
+            }else if(alphabet == 2){    
+                prior_weights[k++] = 10*priors_a2[a][b];
+            }else if(alphabet == 2){    
+                prior_weights[k++] = 10*priors_a3[a][b];
+            }    
 
-		    k++;
-		    //time (&end);
-		    //double dif = difftime (end,start);
-		    //cout << "Shrinkage runtime:\t" << dif << " seconds" << endl;
-
-
+            //cout << "#Prior for (" << a << "," << b << ") = " << 10*priors[a][b] << endl;
     	}	
     }	
     cout << "#Finished shrinking covariance matrices" << endl;
 
     if(wts) jgl_weight = "weights";
+    vector<double> wts_sorted;
 	for(k = 0; k < classes; k++){    	
 		//cout << "# " << k << " - " << weights[k] << " ---> ";    		
 		if(weights[k] == max_cond){
@@ -496,186 +542,61 @@ int main(int argc, char **argv){
 			weights[k] = 1e-5;
 		}else{
 			weights[k] = 1.0-(weights[k]/max_cond);
+
 		}
+		wts_sorted.push_back(weights[k]);
 		//cout << weights[k] << " (max = " << max_cond << ")" << endl;
 	}
     cout << "#Finished calculating weights" << endl;
 
+    // Filter
+    Rcpp::List mylist_filt(classes-(int)(classes*percentile));
+    Rcpp::NumericVector weights_filt(classes-(int)(classes*percentile));    
+    Rcpp::NumericVector prior_weights_filt(classes-(int)(classes*percentile));    
+    if(filt){
+    	double filt_threshold = 0.0;
+	    sort(wts_sorted.begin(),wts_sorted.end());
+	    for(i = 0; i < classes; i++){
+	    	cout << i << " --- " << wts_sorted[i];
+	    	if(i+1 == (unsigned int)(classes*percentile)){
+	    		cout << " **** ";
+	    		filt_threshold = wts_sorted[i];
+	    	}
+	    	cout << endl;	
+	    }    	
+	    for(k = i = 0; k < classes; k++){ 
+	    	if(weights[k] > filt_threshold){
+	    		weights_filt[i] = weights[k];
+                prior_weights_filt[i] = prior_weights[k];
+	    		mylist_filt[i++] = mylist[k];
+	    	}else{
+	    		cout << "Skipping weight " << weights[k] << " - below/equal threhsold " << filt_threshold << endl;
+	    	}	
+	    }
+	    cout << "#Finished filtering matrices by weight" << endl;
+	    R["data"] = mylist_filt;
+        if(wts > 1){
+            cout << "#Using Bayesian priors" << endl;
+            R["weights"] = prior_weights_filt;
+        }else{    
+            R["weights"] = weights_filt;
+       }
+
+	}else{
+		R["data"] = mylist;
+        if(wts > 1){
+            cout << "#Using Bayesian priors" << endl;
+            R["weights"] = prior_weights;
+        }else{    
+		    R["weights"] = weights;
+	   }
+    }
+
     sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
     time_t start,end;
     Rcpp::List theta;
-	R["data"] = mylist;
-	R["weights"] = weights;
-
 
 	cout << "#Running JGL..." << endl;
-
-
-	/*
-	time (&start);
-	r_code = "JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=TRUE,screening=\"fast\",truncate = 1e-5)";
-	Rcpp::List ret = R.parseEval(r_code);	
-	time (&end);	
-	//cout << "Finished group lasso (" << (int)difftime (end,start) << " seconds)" << endl;
-	
-	theta = ret[0];
-	for(k = 0; k < classes; k++){
-		//http://stackoverflow.com/questions/12719334/how-to-handle-list-in-r-to-rcpp
-		SEXP ll = theta[k];
-        Rcpp::NumericMatrix y(ll);				
-	    double** pcmat = allocmat(seqlen,seqlen);
-		double* pcsum = new double[seqlen];
-		pcmean = 0.0;
-
-
-		//cout << "Matrix " << k+1 << endl;
- 		//for (i = 0; i < seqlen; i++){
-        //    for (j = 0; j < seqlen; j++){
-        //    	cout << y(i,j) << " ";
-        //    }
-        //    cout << endl;
-        //}
-
- 		for (npair = nnzero = i = 0; i < seqlen; i++){
-            for (j = i+1; j < seqlen; j++, npair++){
-                if (y(i,j) > 0.0){
-                    nnzero++;
-                }
-                pcmat[i][j] = pcmat[j][i] = fabs(y(i,j));
-                //pcmat[i][j] = pcmat[j][i] = -y(i,j)/sqrt(y(i,i)*y(j,j));
-                pcsum[i] += pcmat[i][j];
-    			pcsum[j] += pcmat[i][j];
-				pcmean += pcmat[i][j];
-            }
- 		}
-
- 			
-		//cout << "PCMatrix " << k+1 << endl;
- 		//for (i = 0; i < seqlen; i++){
-        //    for (j = 0; j < seqlen; j++){
-        //    	cout << pcmat(i,j) << " ";
-        //    }
-        //    cout << endl;
-        //}
-        //cout << endl;
-		
- 		pcmean /= seqlen * (seqlen - 1) * 0.5;
-        double fnzero = (double) nnzero / npair;
-        sumfnzero += fnzero;
-
-        sc_entry* sclist_k = new sc_entry[seqlen * (seqlen - 1) / 2]; 
-
-        // Calculate APC score
-	    for (ncon = i = 0; i < seqlen; i++){
-	        for (j=i+minseqsep; j<seqlen; j++){
-	            //if (pcmat(i,j) > 0.0){			
-
-	            	if(apcflg){
-	                	sclist[ncon].sc += pcmat[i][j] - pcsum[i] * pcsum[j] / sqrt(seqlen-1.0) / pcmean;
-	                	sclist_k[ncon].sc += pcmat[i][j] - pcsum[i] * pcsum[j] / sqrt(seqlen-1.0) / pcmean;
-	                }else{
-	                	sclist[ncon].sc += pcmat[i][j];
-	                	sclist_k[ncon].sc += pcmat[i][j];
-	                }
-	                sclist[ncon].i = i;
-	                sclist[ncon].j = j;
-	                sclist_k[ncon].i = i;
-	                sclist_k[ncon++].j = j;
-
-	            //}
-	        }    
-	    } 
-        delete [] pcsum;
-
-        if(native_contacts.size()){
-
-			int tp100 = 0;	
-			int tp50 = 0;
-			int tp20 = 0;
-			int tp10 = 0;
-			int tp5 = 0;
-			int tp2 = 0;
-			int tp1 = 0;	
-			double p100 = 0.0;	
-			double p50 = 0.0;
-			double p20 = 0.0;
-			double p10 = 0.0;
-			double p5 = 0.0;
-			double p2 = 0.0;
-			double p1 = 0.0;
-
-			qsort(sclist_k, ncon, sizeof(struct sc_entry), cmpfn);
-		    for (i = 0; i < ncon; i++){
-		        if(sclist_k[i].sc > 0.0){
-		        	//printf("%d %d 0 8 %f\n", sclist_k[i].i+1, sclist_k[i].j+1, sclist_k[i].sc);
-					string con = to_string(sclist_k[i].i+1);
-					con.append("-");
-					con.append(to_string(sclist_k[i].j+1));
-					if (sclist_k[i].sc > 0.0 && find(native_contacts.begin(),native_contacts.end(),con) != native_contacts.end()){
-						if(i < 100)tp100++;	
-						if(i < 50)tp50++;
-						if(i < 20)tp20++;
-						if(i < 10)tp10++;
-						if(i < 5)tp5++;
-						if(i < 2)tp2++;
-						if(i < 1)tp1++;
-					}
-		        }	
-		    }
-
-		    if(tp100) p100 = (double)tp100/100.0;
-		    if(tp50) p50 = (double)tp50/50.0;
-		    if(tp20) p20 = (double)tp20/20.0;
-		    if(tp10) p10 = (double)tp10/10.0;
-		    if(tp5) p5 = (double)tp5/5.0;
-		    if(tp2) p2 = (double)tp2/2.0;
-		    if(tp1) p1 = (double)tp1/1.0;
-
-		    if(!k) cout << "#k\twt\tdens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-		    cout << "#" << k << "\t" << setprecision(4) << weights[k] << "\t" << fnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
-
-		}
-
-        delete [] sclist_k;
-        freemat(pcmat,seqlen,seqlen);    
-    }
-    sumfnzero /= (double)classes;
-    cout << "#" << l1 << " " << l2 << " - mean fnzero = " << sumfnzero << "\t(" << (int)difftime (end,start) << " seconds)" << endl;
-
-	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
-    for (i = 0; i < ncon; i++){
-        if(sclist[i].sc > 0.0){
-        	printf("%d %d 0 8 %f\n", sclist[i].i+1, sclist[i].j+1, sclist[i].sc);
-        	if(native_contacts.size()){
-				string con = to_string(sclist[i].i+1);
-				con.append("-");
-				con.append(to_string(sclist[i].j+1));
-				if (find(native_contacts.begin(),native_contacts.end(),con) != native_contacts.end()){
-					if(i < 100)tp100++;	
-					if(i < 50)tp50++;
-					if(i < 20)tp20++;
-					if(i < 10)tp10++;
-					if(i < 5)tp5++;
-					if(i < 2)tp2++;
-					if(i < 1)tp1++;
-				}
-			}        	
-        }	
-    }
-
-    if(native_contacts.size()){
-	    if(tp100) p100 = (double)tp100/100.0;
-	    if(tp50) p50 = (double)tp50/50.0;
-	    if(tp20) p20 = (double)tp20/20.0;
-	    if(tp10) p10 = (double)tp10/10.0;
-	    if(tp5) p5 = (double)tp5/5.0;
-	    if(tp2) p2 = (double)tp2/2.0;
-	    if(tp1) p1 = (double)tp1/1.0;
-    	    cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-	    cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
-    }	
-
-	*/
 
 	time (&start);
 	r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=FALSE,screening=\"fast\",truncate = 1e-5)";
@@ -710,7 +631,7 @@ int main(int argc, char **argv){
     	for (j = i+1; j< dim; j++){
             //cout << y(i,j) << " ";
             if(i != j && y(i,j) != 0){
-		    sclist[ncon].sc += fabs(y(i,j));
+				sclist[ncon].sc = fabs(y(i,j));
 	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
 	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
            }
@@ -718,9 +639,8 @@ int main(int argc, char **argv){
         //cout << endl;    
     }
 
-    qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
+	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
     for (i = 0; i < ncon; i++){
-    	printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
     	if(native_contacts.size()){
 			string con = to_string((long long int)sclist[i].i);
 			con.append("-");
@@ -734,21 +654,20 @@ int main(int argc, char **argv){
 				if(i < 2)tp2++;
 				if(i < 1)tp1++;
 			}
+		}else{
+			printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
 		}        	
-    }
-
-
-    sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
+    }    
 
     if(native_contacts.size()){
 
-	    double p100 = 0.0;	
-	    double p50 = 0.0;
-	    double p20 = 0.0;
-	    double p10 = 0.0;
-	    double p5 = 0.0;
-	    double p2 = 0.0;
-	    double p1 = 0.0;
+		double p100 = 0.0;	
+		double p50 = 0.0;
+		double p20 = 0.0;
+		double p10 = 0.0;
+		double p5 = 0.0;
+		double p2 = 0.0;
+		double p1 = 0.0;
 
 	    if(tp100) p100 = (double)tp100/100.0;
 	    if(tp50) p50 = (double)tp50/50.0;
@@ -757,10 +676,16 @@ int main(int argc, char **argv){
 	    if(tp5) p5 = (double)tp5/5.0;
 	    if(tp2) p2 = (double)tp2/2.0;
 	    if(tp1) p1 = (double)tp1/1.0;
+
+	    sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
+
 	    cout << "# ncon = " << ncon << endl;
-    	    cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-	    cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
+    	cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
+		cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
     }	
+
+
+	
 
     // Clean up
     freemat(pa,seqlen,alphabet_sz); 
