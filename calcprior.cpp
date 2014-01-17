@@ -1,5 +1,4 @@
-// Parse a PDB file, identify contacts and print them, their sequence seperation
-// and the secondary structure type of each residue (based on STRIDE)
+// Parse a PDB file, identify contacts calculate P(contact|residue_type_i,residue_type_j)
 // (c) Tim Nugent 2013
 
 #include <stdio.h>
