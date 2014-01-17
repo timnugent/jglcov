@@ -1,4 +1,4 @@
-// Parse a PDB file, identify contacts calculate P(contact|residue_type_i,residue_type_j)
+// Parse a PDB file, identify contacts, and calculate P(contact|residue_type_i,residue_type_j)
 // (c) Tim Nugent 2014
 
 #include <stdio.h>
