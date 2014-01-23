@@ -204,14 +204,55 @@ int index4D(int i, int j, int a, int b, int w, int ww){
         return((row*(w*ww))+column);
 }
 
+int test_cholesky(Rcpp::NumericMatrix& a, const int n){
+
+    //cout << "#In cholesky..." << endl;
+    int i, j, k;
+    double sum;
+    double *diag = new double[n];
+
+    for (i=0; i<n; i++){
+
+        for (j=i; j<n; j++){
+
+            sum = a(i,j);
+
+            for (k=i-1; k >= 0; k--)
+                sum -= a(i,k)*a(j,k);
+
+            if (i == j){
+
+                if (sum <= 0.0){
+                    delete [] diag;
+                    return TRUE;
+                }
+
+                diag[i] = sqrt(sum);
+            }
+            else
+                a(j,i) = sum / diag[i];
+        }
+    }
+    delete [] diag;
+    return FALSE;
+}
+
 int main(int argc, char **argv){
 
 	double wtsum, pcmean, pc, idthresh = -1.0, pseudoc = 1.0, sumfnzero = 0.0, percentile = 0.05;
-	unsigned int nseqs, ncon = 0, opt, seqlen, i, j, k, a, b, npair, nnzero, filt = 0, shrinkflg = 1, minseqsep = 5, apcflg = 0, wts = 1, alphabet = 1, alphabet_sz = 21;
+	unsigned int nseqs, opt, seqlen, i, j, k, a, b, npair, nnzero, filt = 0, shrinkflg = 1, minseqsep = 5, apcflg = 1, all_theta = 1, wts = 1, alphabet = 1, alphabet_sz = 21;
 	int o = 1;
+
 	double rho = 1e-06;
-	double l1  = 1e-08;
-	double l2  = 1e-02;
+    double l1  = 1e-08;
+    double l2  = 1e-08;
+
+    /*
+	rho = 7e-04;
+	l1  = 4e-06;
+	l2  = 3e-02;	
+    */
+
 	char seq[MAXSEQLEN];
 	char *native = NULL;
 	string jgl_weight = "\"equal\"";
@@ -269,13 +310,16 @@ int main(int argc, char **argv){
         if(argv[o][0] == '-'){
             o++;
             switch(argv[o-1][1]){
-            		case 'p' : {penalty = "fused"; o--; cout << "#Using fused penalty" << endl; break;} // use fused rather than group penalty (slow/might crash)
+            		case 'p' : {penalty = "fused"; o--; break;} // use fused rather than group penalty (slow/might crash)
             		case 'c' : {native = argv[o]; break;} // file containing native contacts
             		case 'r' : {rho = atof(argv[o]); break;} // jgl rho param
                     case 'm' : {l1 = atof(argv[o]); break;} // jgl lambda1 param
                     case 'n' : {l2 = atof(argv[o]); break;} // jgl lambda2 param
-                    case 'a' : {alphabet = atoi(argv[o]); cout << "#Using alphabet " << alphabet << endl; break;} // use reduced alphabet (1-3)
-                    case 'w' : {wts = atoi(argv[o]); cout << "#Using weights " << wts << endl; break;} // use weights, 1 = condition, 2 = bayesian priors
+                    case 'z' : {apcflg = atoi(argv[o]); break;} // apply apc correction
+                    case 'x' : {all_theta = atoi(argv[o]); break;} // get all thetas
+                    case 'a' : {alphabet = atoi(argv[o]); break;} // use reduced alphabet (1-3)
+                    case 'w' : {wts = atoi(argv[o]); break;} // use weights, 1 = condition, 2 = bayesian priors
+                    case 's' : {shrinkflg = atoi(argv[o]); break;} // shrinkage type, 1 = JS shrinkage, 2 = diagonal, 0 = none
                     case 'f' : {filt = atoi(argv[o]); break;} // filter low weights at whatever percentile
                     case 'g' : {percentile = atof(argv[o]); break;} // filter matrices with weights in this percentile
                     default  : {fail("Options:\t-m float lamda1 penalty\n-n float lambda2 penalty\n-w use weights\n-c file native contacts\n");}
@@ -287,10 +331,16 @@ int main(int argc, char **argv){
     if(alphabet) alphabet_sz = 6;
     unsigned int classes = (alphabet_sz-1)*(alphabet_sz-1);
 
-    cout << "#rho     = " << rho<< endl;
-    cout << "#lambda1 = " << l1 << endl;
-    cout << "#lambda2 = " << l2 << endl;
-    cout << "#aln     = " << argv[o-1] << endl;
+    cout << "#penalty   = " << penalty << endl;
+    cout << "#alphabet  = " << alphabet << endl;
+    cout << "#weight    = " << wts << endl;
+    cout << "#shrink    = " << shrinkflg << endl;
+    cout << "#rho       = " << rho<< endl;
+    cout << "#lambda1   = " << l1 << endl;
+    cout << "#lambda2   = " << l2 << endl;
+    cout << "#all_theta = " << all_theta << endl;
+    cout << "#apc flag  = " << apcflg << endl;
+    cout << "#aln       = " << argv[o-1] << endl;
 
     // Parse native contacts is provided
     vector<string> native_contacts;
@@ -447,7 +497,7 @@ int main(int argc, char **argv){
     for (i=0; i<seqlen; i++){
 		for (a=0; a < alphabet_sz; a++){
 	    	for (b=0; b < alphabet_sz; b++){
-				pab[index4D(i,j,a,b,alphabet_sz,seqlen)] = (a == b) ? pa[i][a] : 0.0;
+				pab[index4D(i,i,a,b,alphabet_sz,seqlen)] = (a == b) ? pa[i][a] : 0.0;
 	    	}
 	    }		
 	}    
@@ -466,6 +516,8 @@ int main(int argc, char **argv){
 	Rcpp::NumericVector weights(classes);
     Rcpp::NumericVector prior_weights(classes);
 	double max_cond = -100000.0;
+    unsigned int ndim = seqlen*alphabet_sz-1;
+
 
     for (a = k = 0; a < alphabet_sz-1; a++){
         for (b = 0; b < alphabet_sz-1; b++){
@@ -475,48 +527,102 @@ int main(int argc, char **argv){
 
     		for (i = 0; i < seqlen; i++){
         		for (j = 0; j < seqlen; j++){
-                    if (i != j){
+                    //if (i != j){
                     	rMat(i,j) = pab[index4D(i,j,a,b,alphabet_sz,seqlen)] - pa[i][a] * pa[j][b];
-	                }        
+	                //}else{
+                    //    rMat(i,j) = pa[i][a];
+                    //}       
     			}
     		}
-    		rMat.attr("dimnames") = dimnms;		    
-		    mylist[k] = rMat;
+    		rMat.attr("dimnames") = dimnms;			   
 		    
 		    // Shrinkage
-		    if(shrinkflg){
+		    if(shrinkflg == 1){
 		    	
 		    	R["X"] = rMat;
 			    
-			    /*
-			    int posdef = R.parseEval("is.positive.definite(X)");
-			    cout << "(pre)Positive definite: " << posdef << endl;
+			    
+			    //int posdef = R.parseEval("is.positive.definite(X)");
+			    //cout << "(pre)Positive definite: " << posdef << endl;
 			    Rcpp::List condition = R.parseEval("rank.condition(X)");
-			    int rank = Rcpp::as<int>(condition[0]);
-			    double cond = (condition[1]);
-			    cout << "(pre)Rank: " << rank << endl;
-			    cout << "(pre)Condition: " << cond << endl;
-			    conut << "---shrinking---" << endl;
-				time_t start,end;
-			    time (&start);
-			    */
+			    int rank1 = Rcpp::as<int>(condition[0]);
+			    //double cond = (condition[1]);
+			    //cout << "(pre)Rank: " << rank << endl;
+			    //cout << "(pre)Condition: " << cond << endl;
+			    //conut << "---shrinking---" << endl;
+				//time_t start,end;
+			    //time (&start);
+			    
 			    
 			    R.parseEval("s2 = cov.shrink(X,verbose=FALSE)");
 
 			    int posdef = R.parseEval("is.positive.definite(s2)");
 			    //cout << "Positive definite: " << posdef << endl;
-			    Rcpp::List condition_shrunk = R.parseEval("rank.condition(s2)");
-			    int rank = Rcpp::as<int>(condition_shrunk[0]);
+			    //Rcpp::List condition_shrunk = R.parseEval("rank.condition(s2)");
+			    //int rank2 = Rcpp::as<int>(condition_shrunk[0]);
 			    //double cond = Rcpp::as<double>(condition_shrunk[1]);
-			    weights[k] = Rcpp::as<double>(condition_shrunk[1]);
-			    if(Rcpp::as<double>(condition_shrunk[1]) > max_cond){
-			    	max_cond = Rcpp::as<double>(condition_shrunk[1]);
-			    }
-			    //cout << "Rank: " << rank << endl;
+    		    //cout << "Rank: " << rank << endl;
 			    //cout << "Condition: " << cond << endl;
 			    Rcpp::NumericMatrix M = R.parseEval("s2");
+                //if(rank2 < rank1){
 		    	mylist[k] = M;
-	    	}
+                //}    
+
+	    	}else if(shrinkflg == 2){
+
+                //cout << "#Calculing mean of diag..." << endl;
+                double smean = 0.0;
+                for(smean=i=0; i<seqlen; i++){
+                    //cout << i << " --- " << rMat(i,i) << endl;
+                    smean += rMat(i,i);
+                }
+                        
+                smean /= (double)seqlen;
+                double lambda = 0.25;
+                cout << "#Starting diag shrinkage..." << endl;
+                for (;;){
+
+                    //cout << "#Made a copy..." << endl;
+                    Rcpp::NumericMatrix tempmat(rMat);
+                    //memcpy(tempmat, cmat, ndim*ndim*sizeof(double));
+                    //cout << "#Done..." << endl;
+
+                    /* Test if positive definite using Cholesky decomposition */
+                    //R["X"] = tempmat;
+                    //int posdef = R.parseEval("is.positive.definite(X)");
+                    //if (!posdef)
+                    //    break;
+
+                    if (!test_cholesky(tempmat, seqlen)){
+                        break;
+                    }
+                    
+                    for (i=0; i<seqlen; i++){
+                        for (j=0; j<seqlen; j++){
+                            if (i != j){
+                                rMat(i,j) *= 1.0 - lambda;
+                            }else{
+                                rMat(i,j) = smean * lambda + (1.0 - lambda) * rMat(i,j);
+                            }
+                        }
+                    }
+                }
+
+                //cout << "#Finished diag shrinkage..." << endl;
+                mylist[k] = rMat;
+
+            }else{
+                // No shrinkage
+                mylist[k] = rMat;
+            }    
+
+            // Set up weights
+            R["X"] = mylist[k];
+            Rcpp::List condition_shrunk = R.parseEval("rank.condition(X)");
+            weights[k] = Rcpp::as<double>(condition_shrunk[1]);
+            if(Rcpp::as<double>(condition_shrunk[1]) > max_cond){
+                max_cond = Rcpp::as<double>(condition_shrunk[1]);
+            }
 
             if(!alphabet){
                 prior_weights[k++] = 10*priors_a0[a][b];
@@ -592,52 +698,128 @@ int main(int argc, char **argv){
 	   }
     }
 
-    sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
-    time_t start,end;
-    Rcpp::List theta;
+    //sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
+    time_t start,end;    
 
 	cout << "#Running JGL..." << endl;
 
-	time (&start);
-	r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=FALSE,screening=\"fast\",truncate = 1e-5)";
-	R.parseEvalQ(r_code);
-	time (&end);	
-	cout << "#Finished group lasso (" << (int)difftime (end,start) << " seconds)" << endl;
-    
-    r_code = "dim(ggl.results[[1]][[1]])[1]";
-    unsigned int dim = Rcpp::as<int>(R.parseEval(r_code));
-    //cout << "Dim = " << dim << endl;
-
-    r_code = "dimnames(ggl.results[[1]][[1]])[[1]]";
-    Rcpp::List v = (R.parseEval(r_code));  
-    //cout << "dimnames:" << endl;
-    //for(int i = 0; i < dim; i++){
-    //    cout << Rcpp::as<string>(v[i]) << endl;     
-    //}   
-
-    r_code = "ggl.results[[1]][[1]]";
-    SEXP ll = R.parseEval(r_code);
-    Rcpp::NumericMatrix y(ll);  
-
-	int tp100 = 0;	
-	int tp50 = 0;
-	int tp20 = 0;
-	int tp10 = 0;
-	int tp5 = 0;
-	int tp2 = 0;
-	int tp1 = 0;	
-
-    for(i = 0; i < dim; i++){
-    	for (j = i+1; j< dim; j++){
-            //cout << y(i,j) << " ";
-            if(i != j && y(i,j) != 0){
-				sclist[ncon].sc = fabs(y(i,j));
-	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
-	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
-           }
-        }
-        //cout << endl;    
+    if(native_contacts.size()){
+        cout << "# l1\tl2\trho\tncon\tdens\t1\t2\t5\t10\t20\t50\t100" << endl;
     }
+
+    for(l1 = 1e-10; l1 <= 1e-01; l1 *= 10){
+        for(l2 = 1e-10; l2 <= 1e-01; l2 *= 10){
+
+    time (&start);
+
+    sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
+    unsigned int ncon = 0;
+    double pcmean = 0.0;
+
+    if(all_theta){
+        //cout << "#Returning all thetas..." << endl;
+
+        r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=TRUE,screening=\"fast\",truncate = 1e-5)";
+        Rcpp::List ret = R.parseEval(r_code);            
+        Rcpp::List theta = ret[0];
+
+        double** pcmat = allocmat(seqlen,seqlen);
+        double* pcsum = new double[seqlen];
+        for (i = 0; i < seqlen; i++){
+            pcsum[i] = 0.0;
+        }    
+        pcmean = 0.0;
+
+        for(k = 0; k < classes; k++){
+            
+            SEXP ll = theta[k];
+            Rcpp::NumericMatrix y(ll);    
+            //cout << "#Theta : " << k << endl;
+            for (i = 0; i < seqlen; i++){
+                for (j = i+1; j < seqlen; j++){
+                    //cout << i << "-" << j << ":" << y(i,j) << "- ";
+                    pcmat[i][j] += fabs(y(i,j));
+                    pcmat[j][i] = pcmat[i][j];
+                }
+                //cout << endl;
+            }
+            //cout << endl;        
+        }
+
+        for (i = 0; i < seqlen; i++){
+            for (j = i+1; j < seqlen; j++){
+                pcsum[i] += pcmat[i][j];
+                pcsum[j] += pcmat[i][j];
+                pcmean += pcmat[i][j];
+            }
+        }
+
+        pcmean /= seqlen * (seqlen - 1) * 0.5;
+
+        for (ncon=i=0; i<seqlen; i++){
+            for (j=i+minseqsep; j<seqlen; j++){
+                if (pcmat[i][j] > 0.0){
+                    /* Calculate APC score */
+                    if (apcflg){
+                        sclist[ncon].sc = pcmat[i][j] - pcsum[i] * pcsum[j] / sqrt(seqlen - 1.0) / pcmean;
+                    }else{
+                        sclist[ncon].sc = pcmat[i][j];
+                    }
+                    sclist[ncon].i = i+1;
+                    sclist[ncon++].j = j+1;
+                }
+            }    
+        }
+        freemat(pcmat,seqlen,seqlen);
+        delete [] pcsum;
+
+    }else{
+	
+    	r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=FALSE,screening=\"fast\",truncate = 1e-5)";
+    	R.parseEvalQ(r_code);    	
+    	//cout << "#Finished group lasso (" << (int)difftime (end,start) << " seconds)" << endl;
+        
+        r_code = "dim(ggl.results[[1]][[1]])[1]";
+        unsigned int dim = Rcpp::as<int>(R.parseEval(r_code));
+        //cout << "Dim = " << dim << endl;
+
+        r_code = "dimnames(ggl.results[[1]][[1]])[[1]]";
+        Rcpp::List v = (R.parseEval(r_code));  
+        //cout << "dimnames:" << endl;
+        //for(int i = 0; i < dim; i++){
+        //    cout << Rcpp::as<string>(v[i]) << endl;     
+        //}   
+
+        r_code = "ggl.results[[1]][[1]]";
+        SEXP ll = R.parseEval(r_code);
+        Rcpp::NumericMatrix y(ll);  
+       
+        for(i = 0; i < dim; i++){
+        	for (j = i+minseqsep; j< dim; j++){
+                //cout << y(i,j) << " ";
+                if(i != j && y(i,j) != 0){
+    				sclist[ncon].sc = fabs(y(i,j));
+    	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
+    	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
+               }
+            }
+            //cout << endl;    
+        }
+
+    }
+    time (&end);    
+
+    int tp100 = 0;  
+    int tp50 = 0;
+    int tp20 = 0;
+    int tp10 = 0;
+    int tp5 = 0;
+    int tp2 = 0;
+    int tp1 = 0;   
+
+    sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
+    //cout << "#Contacts = " << ncon << endl;
+    //cout << "#Density  = " << setprecision(4) << sumfnzero << endl;
 
 	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
     for (i = 0; i < ncon; i++){
@@ -658,6 +840,7 @@ int main(int argc, char **argv){
 			printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
 		}        	
     }    
+    delete [] sclist;
 
     if(native_contacts.size()){
 
@@ -675,16 +858,21 @@ int main(int argc, char **argv){
 	    if(tp10) p10 = (double)tp10/10.0;
 	    if(tp5) p5 = (double)tp5/5.0;
 	    if(tp2) p2 = (double)tp2/2.0;
-	    if(tp1) p1 = (double)tp1/1.0;
+	    if(tp1) p1 = (double)tp1/1.0;	    
 
-	    sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
+	    //cout << "# ncon = " << ncon << endl;
+    	//cout << "# l1\tl2\trho\tncon\ndens.\t1\t2\t5\t10\t20\t50\t100" << endl;
+		cout << "# " << setprecision(4) << l1 << "\t" << l2 << "\t" << rho << "\t" << ncon << "\t" << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100;
+        if(all_theta){
+            cout << "\t" << pcmean;
+        }
+        cout << endl;
 
-	    cout << "# ncon = " << ncon << endl;
-    	cout << "# dens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-		cout << "# " << setprecision(4) << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
+
     }	
-
-
+    
+        }
+    }
 	
 
     // Clean up
@@ -694,7 +882,6 @@ int main(int argc, char **argv){
     }
     delete [] aln;
     delete [] pab;
-    delete [] sclist;
     return(0);
 
 }
