@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <time.h>
 #include <math.h> 
+#include <exception>
 #include <RInside.h>
 
 using namespace std;
@@ -698,7 +699,7 @@ int main(int argc, char **argv){
 	   }
     }
 
-    //sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
+
     time_t start,end;    
 
 	cout << "#Running JGL..." << endl;
@@ -710,167 +711,187 @@ int main(int argc, char **argv){
     for(l1 = 1e-10; l1 <= 1e-01; l1 *= 10){
         for(l2 = 1e-10; l2 <= 1e-01; l2 *= 10){
 
-    time (&start);
+            time (&start);
 
-    sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
-    unsigned int ncon = 0;
-    double pcmean = 0.0;
+            sc_entry* sclist = new sc_entry[seqlen * (seqlen - 1) / 2]; 
+            unsigned int ncon = 0;
+            double pcmean = 0.0;
 
-    if(all_theta){
-        //cout << "#Returning all thetas..." << endl;
+            if(all_theta){
+                //cout << "#Returning all thetas..." << endl;
 
-        r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=TRUE,screening=\"fast\",truncate = 1e-5)";
-        Rcpp::List ret = R.parseEval(r_code);            
-        Rcpp::List theta = ret[0];
+                try{
 
-        double** pcmat = allocmat(seqlen,seqlen);
-        double* pcsum = new double[seqlen];
-        for (i = 0; i < seqlen; i++){
-            pcsum[i] = 0.0;
-        }    
-        pcmean = 0.0;
+                    r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=TRUE,screening=\"fast\",truncate = 1e-5)";
+                    Rcpp::List ret = R.parseEval(r_code);            
+                    Rcpp::List theta = ret[0];
 
-        for(k = 0; k < classes; k++){
-            
-            SEXP ll = theta[k];
-            Rcpp::NumericMatrix y(ll);    
-            //cout << "#Theta : " << k << endl;
-            for (i = 0; i < seqlen; i++){
-                for (j = i+1; j < seqlen; j++){
-                    //cout << i << "-" << j << ":" << y(i,j) << "- ";
-                    pcmat[i][j] += fabs(y(i,j));
-                    pcmat[j][i] = pcmat[i][j];
-                }
-                //cout << endl;
-            }
-            //cout << endl;        
-        }
+                    double** pcmat_all_k = allocmat(seqlen,seqlen);
 
-        for (i = 0; i < seqlen; i++){
-            for (j = i+1; j < seqlen; j++){
-                pcsum[i] += pcmat[i][j];
-                pcsum[j] += pcmat[i][j];
-                pcmean += pcmat[i][j];
-            }
-        }
+                    for(k = 0; k < classes; k++){
 
-        pcmean /= seqlen * (seqlen - 1) * 0.5;
+                        double** pcmat = allocmat(seqlen,seqlen);
+                        double* pcsum = new double[seqlen];
+                        for (i = 0; i < seqlen; i++){
+                            pcsum[i] = 0.0;
+                        }    
+                        pcmean = 0.0;
+                        
+                        SEXP ll = theta[k];
+                        Rcpp::NumericMatrix y(ll);    
 
-        for (ncon=i=0; i<seqlen; i++){
-            for (j=i+minseqsep; j<seqlen; j++){
-                if (pcmat[i][j] > 0.0){
-                    /* Calculate APC score */
-                    if (apcflg){
-                        sclist[ncon].sc = pcmat[i][j] - pcsum[i] * pcsum[j] / sqrt(seqlen - 1.0) / pcmean;
-                    }else{
-                        sclist[ncon].sc = pcmat[i][j];
+                        int c = 0;
+                        for (i = 0; i < seqlen; i++){
+                            for (j = i+1; j < seqlen; j++){
+                                pcmat[i][j] += fabs(y(i,j));
+                                pcsum[i] += pcmat[i][j];
+                                pcsum[j] += pcmat[i][j];
+                                pcmean += pcmat[i][j];
+                                c++;
+                            }
+                        }
+                        pcmean /= c;
+                        for (i = 0; i < seqlen; i++){
+                            pcsum[i] /= c;
+                        }    
+
+                        for (i = 0; i<seqlen; i++){
+                            for (j = i+minseqsep; j<seqlen; j++){
+                                if (pcmat[i][j] > 0.0){
+                                    /* Calculate APC score */
+                                    if (apcflg){
+                                        pcmat_all_k[i][j] += pcmat[i][j] - (pcsum[i]*pcsum[j])/pcmean;
+                                    }else{
+                                        pcmat_all_k[i][j] += pcmat[i][j];
+                                    }
+                                }
+                            }    
+                        }
+
+                        freemat(pcmat,seqlen,seqlen);
+                        delete [] pcsum;
+
                     }
-                    sclist[ncon].i = i+1;
-                    sclist[ncon++].j = j+1;
+
+                    for (ncon=i=0; i<seqlen; i++){
+                        for (j=i+minseqsep; j<seqlen; j++){
+                            if (pcmat_all_k[i][j] > 0.0){
+                                sclist[ncon].sc = pcmat_all_k[i][j];
+                                sclist[ncon].i = i+1;
+                                sclist[ncon++].j = j+1;
+                            }
+                        }    
+                    }
+
+                    freemat(pcmat_all_k,seqlen,seqlen);
+
+
+                }catch (exception& e){
+
+                    cout << e.what() << endl;
+                
+                }
+
+            }else{
+        	
+                try{
+
+                	r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=FALSE,screening=\"fast\",truncate = 1e-5)";
+                	R.parseEvalQ(r_code);    	
+                	//cout << "#Finished group lasso (" << (int)difftime (end,start) << " seconds)" << endl;
+                    
+                    r_code = "dim(ggl.results[[1]][[1]])[1]";
+                    unsigned int dim = Rcpp::as<int>(R.parseEval(r_code));
+                    //cout << "Dim = " << dim << endl;
+
+                    r_code = "dimnames(ggl.results[[1]][[1]])[[1]]";
+                    Rcpp::List v = (R.parseEval(r_code));  
+                    //cout << "dimnames:" << endl;
+                    //for(int i = 0; i < dim; i++){
+                    //    cout << Rcpp::as<string>(v[i]) << endl;     
+                    //}   
+
+                    r_code = "ggl.results[[1]][[1]]";
+                    SEXP ll = R.parseEval(r_code);
+                    Rcpp::NumericMatrix y(ll);  
+                   
+                    for(i = 0; i < dim; i++){
+                    	for (j = i+minseqsep; j< dim; j++){
+                            //cout << y(i,j) << " ";
+                            if(i != j && y(i,j) != 0){
+                				sclist[ncon].sc = fabs(y(i,j));
+                	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
+                	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
+                           }
+                        }
+                        //cout << endl;    
+                    }
+
+                }
+                time (&end);    
+
+                int tp100 = 0;  
+                int tp50 = 0;
+                int tp20 = 0;
+                int tp10 = 0;
+                int tp5 = 0;
+                int tp2 = 0;
+                int tp1 = 0;   
+
+                sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
+                //cout << "#Contacts = " << ncon << endl;
+                //cout << "#Density  = " << setprecision(4) << sumfnzero << endl;
+
+            	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
+                for (i = 0; i < ncon; i++){
+                	if(native_contacts.size()){
+            			string con = to_string((long long int)sclist[i].i);
+            			con.append("-");
+            			con.append(to_string((long long int)sclist[i].j));
+            			if (find(native_contacts.begin(),native_contacts.end(),con) != native_contacts.end()){
+            				if(i < 100)tp100++;	
+            				if(i < 50)tp50++;
+            				if(i < 20)tp20++;
+            				if(i < 10)tp10++;
+            				if(i < 5)tp5++;
+            				if(i < 2)tp2++;
+            				if(i < 1)tp1++;
+            			}
+            		}else{
+            			printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
+            		}        	
+                }    
+                delete [] sclist;
+
+                if(native_contacts.size()){
+
+            		double p100 = 0.0;	
+            		double p50 = 0.0;
+            		double p20 = 0.0;
+            		double p10 = 0.0;
+            		double p5 = 0.0;
+            		double p2 = 0.0;
+            		double p1 = 0.0;
+
+            	    if(tp100) p100 = (double)tp100/100.0;
+            	    if(tp50) p50 = (double)tp50/50.0;
+            	    if(tp20) p20 = (double)tp20/20.0;
+            	    if(tp10) p10 = (double)tp10/10.0;
+            	    if(tp5) p5 = (double)tp5/5.0;
+            	    if(tp2) p2 = (double)tp2/2.0;
+            	    if(tp1) p1 = (double)tp1/1.0;	    
+
+            	    //cout << "# ncon = " << ncon << endl;
+                	//cout << "# l1\tl2\trho\tncon\ndens.\t1\t2\t5\t10\t20\t50\t100" << endl;
+            		cout << "# " << setprecision(4) << l1 << "\t" << l2 << "\t" << rho << "\t" << ncon << "\t" << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
+
+
+                }catch (exception& e){
+
+                    cout << e.what() << endl;
+                
                 }
             }    
-        }
-        freemat(pcmat,seqlen,seqlen);
-        delete [] pcsum;
-
-    }else{
-	
-    	r_code = "ggl.results = JGLx(Y=data,penalty=\"" + penalty + "\",lambda1=" + to_string((long double)l1) + ",lambda2=" + to_string((long double)l2) + ",rho=" + to_string((long double)rho) + ",weight=" + jgl_weight + ",penalize.diagonal=FALSE,maxiter=500,tol=1e-5,warm=NULL,return.whole.theta=FALSE,screening=\"fast\",truncate = 1e-5)";
-    	R.parseEvalQ(r_code);    	
-    	//cout << "#Finished group lasso (" << (int)difftime (end,start) << " seconds)" << endl;
-        
-        r_code = "dim(ggl.results[[1]][[1]])[1]";
-        unsigned int dim = Rcpp::as<int>(R.parseEval(r_code));
-        //cout << "Dim = " << dim << endl;
-
-        r_code = "dimnames(ggl.results[[1]][[1]])[[1]]";
-        Rcpp::List v = (R.parseEval(r_code));  
-        //cout << "dimnames:" << endl;
-        //for(int i = 0; i < dim; i++){
-        //    cout << Rcpp::as<string>(v[i]) << endl;     
-        //}   
-
-        r_code = "ggl.results[[1]][[1]]";
-        SEXP ll = R.parseEval(r_code);
-        Rcpp::NumericMatrix y(ll);  
-       
-        for(i = 0; i < dim; i++){
-        	for (j = i+minseqsep; j< dim; j++){
-                //cout << y(i,j) << " ";
-                if(i != j && y(i,j) != 0){
-    				sclist[ncon].sc = fabs(y(i,j));
-    	            sclist[ncon].i = atoi(Rcpp::as<string>(v[i]).c_str());
-    	            sclist[ncon++].j = atoi(Rcpp::as<string>(v[j]).c_str());
-               }
-            }
-            //cout << endl;    
-        }
-
-    }
-    time (&end);    
-
-    int tp100 = 0;  
-    int tp50 = 0;
-    int tp20 = 0;
-    int tp10 = 0;
-    int tp5 = 0;
-    int tp2 = 0;
-    int tp1 = 0;   
-
-    sumfnzero = (double)ncon/(seqlen * (seqlen - 1) * 0.5);
-    //cout << "#Contacts = " << ncon << endl;
-    //cout << "#Density  = " << setprecision(4) << sumfnzero << endl;
-
-	qsort(sclist, ncon, sizeof(struct sc_entry), cmpfn);
-    for (i = 0; i < ncon; i++){
-    	if(native_contacts.size()){
-			string con = to_string((long long int)sclist[i].i);
-			con.append("-");
-			con.append(to_string((long long int)sclist[i].j));
-			if (find(native_contacts.begin(),native_contacts.end(),con) != native_contacts.end()){
-				if(i < 100)tp100++;	
-				if(i < 50)tp50++;
-				if(i < 20)tp20++;
-				if(i < 10)tp10++;
-				if(i < 5)tp5++;
-				if(i < 2)tp2++;
-				if(i < 1)tp1++;
-			}
-		}else{
-			printf("%d %d 0 8 %f\n", sclist[i].i, sclist[i].j, sclist[i].sc);
-		}        	
-    }    
-    delete [] sclist;
-
-    if(native_contacts.size()){
-
-		double p100 = 0.0;	
-		double p50 = 0.0;
-		double p20 = 0.0;
-		double p10 = 0.0;
-		double p5 = 0.0;
-		double p2 = 0.0;
-		double p1 = 0.0;
-
-	    if(tp100) p100 = (double)tp100/100.0;
-	    if(tp50) p50 = (double)tp50/50.0;
-	    if(tp20) p20 = (double)tp20/20.0;
-	    if(tp10) p10 = (double)tp10/10.0;
-	    if(tp5) p5 = (double)tp5/5.0;
-	    if(tp2) p2 = (double)tp2/2.0;
-	    if(tp1) p1 = (double)tp1/1.0;	    
-
-	    //cout << "# ncon = " << ncon << endl;
-    	//cout << "# l1\tl2\trho\tncon\ndens.\t1\t2\t5\t10\t20\t50\t100" << endl;
-		cout << "# " << setprecision(4) << l1 << "\t" << l2 << "\t" << rho << "\t" << ncon << "\t" << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100;
-        if(all_theta){
-            cout << "\t" << pcmean;
-        }
-        cout << endl;
-
-
-    }	
-    
         }
     }
 	
