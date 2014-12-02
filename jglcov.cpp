@@ -827,6 +827,10 @@ int main(int argc, char **argv){
                         //cout << endl;    
                     }
 
+                }catch(exception& e){
+
+                    cout << e.what() << endl;
+
                 }
                 time (&end);    
 
@@ -886,9 +890,6 @@ int main(int argc, char **argv){
             		cout << "# " << setprecision(4) << l1 << "\t" << l2 << "\t" << rho << "\t" << ncon << "\t" << sumfnzero << "\t" << p1 << "\t" << p2 << "\t" << p5 << "\t" << p10 << "\t" << p20 << "\t" << p50 << "\t" << p100 << endl;
 
 
-                }catch (exception& e){
-
-                    cout << e.what() << endl;
                 
                 }
             }    
